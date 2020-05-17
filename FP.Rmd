@@ -1,0 +1,527 @@
+---
+title: "SEASONS AND MUSICAL PREFERENCES"
+author: "CMSC320 Final Project | Carmen Ollero"
+date: "Spring 2020"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float:  true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+## INTRODUCTION
+
+This is a tutorial that will walk through data science pipeline using a dataset that contains Top 200 Spotify Charts in Europe from 2019 and also weather data for the different regions. 
+
+These days we are living an exceptional situation due to Covid-19 pandemic. Many countries are under lockdown as a measure to stop the spread of the virus. Music, as always, is used by a lot of people to cope with several challenges posed by the situation such as uncertainty, boredom or anxiety among others. Everyone consciously choose music that compliments their feelings in a specific moment as music has the ability to evoke powerful emotional responses in listeners. This is not only in times of crisis as the one we are living these days but it has been like this since the begining of time.
+
+![](brain-music.jpg)
+
+## TUTORIAL CONTENT
+
+- Topic and motivation
+- Libraries
+- Data Import
+- Tidy Data
+- Interactive Data Visualization
+- Exploratory Data Analysis
+- Experiment Design and Hypothesis
+- conclusions
+- References
+
+## 1. TOPIC AND MOTIVATION
+
+Several studies have proved that music choices reflect people´s emotional preferences, so many others have shown that weather have some physiological effects. In this tutorial we will study how Spotify users´ music choices varied based on the time of the year and other music features.
+
+This tutorial will cover the main data science activities applied to the chosen dataset. These activities are organized and shown in the following workflow:
+
+![](datasciencepipeline.pbm)
+
+## 2. LIBRARIES IMPORT
+
+```{r libraries}
+library(tidyverse)
+library(dplyr)
+library(base)
+library(ggplot2)
+library(RColorBrewer)
+library(broom)
+library(leaflet)
+library(DataExplorer)
+library(knitr)
+```
+
+## 3. DATA IMPORT
+
+After installing and importing the libraries that will be needed, the next step is to load the data.
+Nowadays there are a lot of data repositories available in the internet. A great source of datasets and commonly used is [Kaggle](https://www.kaggle.com/datasets). Kaggle is the repository from where the dataset that will be used in this turorial was downloaded. Data can be found [here](https://www.kaggle.com/lautytonks/top-200-spotify-european-song-and-weather-data). 
+
+Another dataset will be used. This second dataset contains countries with their (ISO 3166-1) Alpha-2 code, Alpha-3 code, UN M49, average latitude and longitude. It can be found [here](https://gist.github.com/tadast/8827699). We will use this dataset for interactive data visualization.
+
+Once the datasets have been downloaded and saved in the same folder as this notebook, it is time to load these datasets into the environment.
+
+It is really common to find datasets in comma-separated value (.csv) files. Each line in these files contains attribute values separated by commas. As this format is commonly used, Tydyverse library contains readr R package that provides the read_csv command. read_csv allows to read a dataset stored in a csv file.
+
+We assign to variables called `data` and `countries` the results of calling `read_csv`.
+
+
+```{r dataimport, warning=FALSE}
+data <- read_csv("final_spotify.csv")
+countries <-read_csv("countries_codes_and_coordinates.csv")
+
+head(data)
+head(countries)
+```
+
+## 4. TIDY DATA
+
+To be able to use a dataset for analysis it is necessary to prepare and organize it.
+
+Now that the dataset has been imported, we can take a look at it and learn more about what contains.
+
+To learn the names of the attributes of this dataset, we can use `colnames` command.
+
+```{r data info}
+colnames(data)
+```
+
+```{r data info2}
+colnames(countries)
+```
+
+Also, we can know more about the different attributes using `class` (provides the type of a certain attribute), `factor` (converts an attribute to type facto, categorical) or `summary` (gives information about an attribute of type factor) commands. Geneally the names of the attributes should be representative, however, sometimes they are not. For example, in this dataset "X1" or "const" do not say much about what they represent. Using the commands previously mentioned we will figure it out.
+
+```{r data info. Attributes}
+class(data$X1)
+head(data$X1)
+
+summary(factor(data$const))
+```
+
+After getting some information about the attributes, now we know that "X1" contains just the index of each entity in the dataset and "const" is 1 for every entity.
+
+Now that we know more about our dataset it is time to have our datasets represented in a form that are amenable for manipulation and statistical modeling.
+
+We want our data to be based on rectangular data structures where:
+
+1. Each attribute (or variable) forms a column
+2. Each entity (or observation) forms a row
+3. Each type of entity (observational unit) forms a table
+
+To have a perfectly tidy dataset, we will just eliminate the attributes "const" and "X1" as they do not provide any information about the different entities.
+Also, we noticed that "month" attribute provides information that can be extracted from "date" so it will also be eliminated.
+For our analysis, "spotify_id" it is not necessary as it does not provide any useful information so we eliminate it as well.
+
+The dataset countries will just be necessary for interactive data visualization so only "Alpha-3 code", "Longitude (average)" and "Latitude (average)" attributes are selected.
+
+```{r tidy data}
+data<-data%>%
+  select(-X1,-const, -month, -spotify_id)
+head(data)
+
+countries<-countries%>%
+  select(region=`Alpha-3 code`, lng=`Longitude (average)`, lat=`Latitude (average)`)
+head(countries)
+
+```
+
+## 5. INTERACTIVE DATA VISUALIZATION
+
+An interesting way of understanding the dataset is using interactive data visualization. For example, with our datasets we can show in a map, the total number of streams of each country. To have a clean map, we can use colors and different radius markers. In this case, if the country have more than 9000 million streams, the radius is 12 and the color of the market is red, if the country have between 1200 and 9000 million streams, the radius is 5 and the color of the market is blue, and color is green and radius is 2 otherwise.
+Besides, a label with the total number of streams in millions is shown when the cursor is on top of a specific marker.
+
+To get the interactive map we will use leaflet library.
+```{r Interactive data visualization}
+
+dataC<-left_join(data,countries, by="region")
+
+data_reg<- dataC %>%
+  select(region,streams, lng, lat) %>% 
+  group_by(region, lng, lat) %>%
+  summarise(Total_Streams = sum(streams)) %>%
+  arrange(desc(Total_Streams),region) %>% 
+  mutate(millions = Total_Streams/1000000)
+
+getColor <- function(data_reg) {
+  sapply(data_reg$millions, function(millions) {
+  if(millions > 9000) {
+    "red"
+  } else if(millions > 1200 & millions<=9000) {
+    "blue"
+  } else {
+    "green"
+  } })
+}
+
+getRadius<-function(data_reg) {
+  sapply(data_reg$millions, function(millions) {
+  if(millions > 9000) {
+    12
+  } else if(millions > 1200 & millions<=9000) {
+    5
+  } else {
+    2
+  } })
+}
+map2<-leaflet(data_reg) %>%
+  addTiles() %>%
+  setView(lat=53, lng=9, zoom=3)%>%
+  addCircleMarkers(~lng,~lat, color=getColor(data_reg),radius = getRadius(data_reg), label = data_reg$millions)
+  
+map2
+
+```
+
+
+## 6. EDA (EXPLORATORY DATA ANALYSIS)
+
+With the data filtered and tidy, it is time to do some exploratory data analysis to have a better understanding of the different attributes.
+
+### 6.1. MONTHLY STREAMING TRENDS
+
+First of all, we are going to show the monthly streaming trends. In order to do so, we group by our entities my the attribute month and summarize the number of streams to the sum of all streams of each month.
+
+```{r EDA. Streaming monthly trends}
+m_s_trends<-data%>%
+  select(date,streams)%>%
+  group_by(month=format.Date(date,"%m"))%>%
+  summarise(totStreams=sum(streams)/1000000)
+
+ggplot(m_s_trends, aes(x=month, y=totStreams,group=1))+ geom_line() + geom_point() + xlab("Month of the Year") + ylab("Total Songs Streamed in Millions") +
+    ggtitle("Spotify Monthly Streaming Trends for 2019")
+```
+
+From the graph we can conclude that the month in which more songs are streamed is in December.
+
+Then, the monthly streaming trends by country (if streams are over 200 millions). As we did before, we prepare the dataset by grouping entities by region and month.
+
+```{r EDA. Streaming monthly trends by region}
+
+m_s_trends<-data%>%
+  select(date,streams, region)%>%
+  group_by(region,month=format.Date(date,"%m"))%>%
+  summarise(totStreams=sum(streams)/1000000)%>%
+  filter(totStreams>200)
+
+ggplot(m_s_trends, aes(x=month, y=totStreams,group=region, color=region))+ geom_line() + geom_point() + xlab("Month of the Year") + ylab("Total Songs Streamed in Millions") +
+    ggtitle("Spotify Monthly Streaming Trends for 2019 by Region")
+```
+However, we can see from this new graph that generally more songs are streamed during summer months.
+
+### 6.2. TOTAL STREAMS PER SEASON
+
+As we are more interested in year season than in each month, we add a column to the dataset containing the year season.
+
+Then, we can show the total number of streams per season.
+
+```{r EDA. Streams per season}
+seasons<-data%>%
+  mutate(Season=case_when(
+    date<as.Date("2019-03-19") | date>=as.Date("2019-12-22") ~ "Winter",
+    date<as.Date("2019-06-20") & date>=as.Date("2019-03-19") ~ "Spring",
+    date<as.Date("2019-09-22") & date>=as.Date("2019-06-20") ~ "Summer",
+    date<as.Date("2019-12-22") & date>=as.Date("2019-09-22") ~ "Fall"
+))
+
+seasons_streams<-seasons%>%
+  group_by(Season)%>%
+  summarise(streams=sum(streams)/1000000)
+
+ggplot(seasons_streams, aes(x=Season, y=streams, fill=Season, label=streams)) +
+       geom_bar(width = 1, stat = "identity")+ggtitle("Streams per Season")
+
+```
+As we already conclude, during summer more songs are played.
+
+### 6.3. TOP 10 SONGS AND ARTISTS
+
+From the dataset we can determine the 10 songs that have been longer in the top 10 in 2019 and the top 10 artists, based on the total number of streams of all their songs contained in the dataset.
+
+```{r EDA. Popularity}
+popular<-data%>%
+  filter(position<=10)%>%
+  mutate(month=format.Date(date,"%m"))%>%
+  select(track_name,month, position)%>%
+  group_by(track_name)%>%
+  summarise(totStreams=n())%>%
+  arrange(desc(totStreams))%>%
+  slice(1:10)
+
+
+  pie(popular$totStreams, popular$track_name, border="white", col=brewer.pal(10,"Set3"), main="The 10 Songs Longer in the Top 10")
+
+```
+
+
+
+```{r EDA. Top 10 artists}
+
+m_s_a_top10 <- data%>% 
+  select(artist,streams)%>%
+  group_by(artist)%>%
+  summarise(Streams=sum(streams)/1000000)%>%
+  arrange(desc(Streams))%>%
+  slice(1:10)
+
+m_s_a_top10$artist <- factor(m_s_a_top10$artist, levels=m_s_a_top10$artist[order(desc(m_s_a_top10$Streams))])
+
+ggplot(m_s_a_top10, aes(x=artist, y=Streams))+ geom_bar(stat="identity", fill="navy")+theme(axis.text.x = element_text(face = "bold", angle = 45, hjust=1))+ ggtitle("Most Listened Artists")+xlab("Artist")+ ylab("Total number of streams")
+```
+From the two previous figures, we can conclude that the songs that have been longer in the top 10 do not necessarily correspond to the top 10 artists.
+
+### 6.4. SONGS FEATURES  {.tabset}
+
+Now we are going to focus on the different features. 
+
+First of all we are going to compare the features of the top 10 songs.
+
+```{r EDA. Feactures of 10 top songs}
+
+m_s_t_top10 <-  left_join(popular,data,by = "track_name")
+
+m_s_t_top10_2 <- m_s_t_top10 %>% select(track_name,totStreams,danceability,energy,speechiness,acousticness,liveness,valence) %>% arrange(desc(totStreams))
+
+
+ggplot(m_s_t_top10_2, aes(track_name)) +
+  geom_line(aes(y=danceability, color="danceability",group=1)) +
+  geom_line(aes(y=energy, color="energy",group=2)) +
+  geom_line(aes(y=speechiness, color="speechiness",group=3)) +
+  geom_line(aes(y=acousticness, color="acousticness",group=4)) +
+  geom_line(aes(y=liveness, color="liveness",group=5)) +
+  geom_line(aes(y=valence, color="valence",group=6)) +
+  xlab("Tracks") + ylab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ggtitle("Feature Comparison of Top 10 Songs")
+```
+From the previous graph we can conclude that most of these songs have similar values for the different features. However, for example valence is the feature that varies the most.
+
+
+As we said, we want to focus on the different seasons so next, we are going to show the mean value of each feature per season.
+
+#### Danceability
+```{r EDA. Dnc mean value per season, warning=FALSE}
+
+ft<-seasons%>%
+  select(-position,-temp,-snow,-cloud,-humidity)%>%
+  group_by(Season,month=format.Date(date,"%m"))%>%
+  summarise(streams=sum(streams)/1000000, danceability=mean(danceability), energy=mean(energy),key=mean(key), liveness=mean(liveness), loudness=mean(loudness), speechiness=mean(speechiness), acousticness=mean(acousticness), tempo=mean(tempo), valence=mean(valence))
+
+
+ggplot(ft, aes(y=danceability, x=month, color=Season))+ geom_point()+ggtitle("Danceability per month")+xlab("Month") + ylab("Danceability")
+```
+
+#### Energy
+
+```{r EDA. Engry mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=energy, x=month, color=Season))+ geom_point()+ggtitle("Energy per month")+ xlab("Month") + ylab("Energy")
+```
+
+#### Key
+
+```{r EDA. key mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=key, x=month, color=Season))+ geom_point()+ggtitle("Key per month")+xlab("Month") + ylab("Key")
+```
+
+#### Liveness
+
+```{r EDA. Live mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=liveness, x=month, color=Season))+ geom_point()+ggtitle("Liveness per month")+xlab("Month") + ylab("Liveness")
+```
+
+#### Speechness
+
+```{r EDA. speech mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=speechiness, x=month, color=Season))+ geom_point()+ggtitle("Speechiness per month")+xlab("Month") + ylab("Speechness")
+```
+
+#### Acousticness
+
+```{r EDA. acoust mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=acousticness, x=month, color=Season))+ geom_point()+ggtitle("Acousticness per month")+xlab("Month") + ylab("Acousticness")
+```
+
+#### Loudness
+
+```{r EDA. loud mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=loudness, x=month, color=Season))+ geom_point()+ggtitle("Loudness per month")+xlab("Month") + ylab("Loudness")
+```
+
+#### Tempo
+
+```{r EDA. tempo mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=tempo, x=month, color=Season))+ geom_point()+ggtitle("Tempo per month")+xlab("Month") + ylab("Tempo")
+```
+
+#### Valence
+
+```{r EDA. valence mean value per season, warning=FALSE}
+
+ggplot(ft, aes(y=valence, x=month, color=Season))+ geom_point() +ggtitle("Valence per month")+xlab("Month") + ylab("Valence")
+
+```
+
+
+By looking at the previous graphs, we can tell that depending on the season, songs with certain features are more common. For example, at first sight, during summer season users commonly choose more danceable and positive (valence) music while during winter occurs the opposite.
+
+More specifically, by what we observed on the previous figures, we are going to focus on "danceability", "energy" and "valence". 
+
+```{r EDA.Box plots, warning=FALSE}
+
+ggplot(seasons,mapping=aes(group=Season, y=danceability, x=Season, color=Season))+ geom_boxplot() + stat_summary(fun.y=mean, geom="point", color="red", fill="red", size=0.5) + ggtitle("Danceability per Season") + ylab("Danceability")
+
+ggplot(seasons,mapping=aes(group=Season, y=energy, x=Season, color=Season))+ geom_boxplot() + stat_summary(fun.y=mean, geom="point", color="red", fill="red", size=0.5) + ggtitle("Energy per Season") + ylab("Energy")
+
+ggplot(seasons,mapping=aes(group=Season, y=valence, x=Season, color=Season))+ geom_boxplot() + stat_summary(fun.y=mean, geom="point", color="red", fill="red", size=0.5) + ggtitle("Valence per Season") + ylab("Valence")
+```
+
+These three boxplots, supports the previous conclusion as the mean of the proposed features changes depending on the season and it is higher during summer and less during winter.
+
+
+```{r central tendecy}
+
+ss<-seasons%>%
+  select(-position,-temp,-snow,-cloud,-humidity)%>%
+  group_by(Season)%>%
+  summarise(streams=sum(streams)/1000000, danceability=mean(danceability,,na.rm = TRUE), energy=mean(energy,,na.rm = TRUE),key=mean(key,na.rm = TRUE), liveness=mean(liveness,na.rm = TRUE), loudness=mean(loudness,na.rm = TRUE), speechiness=mean(speechiness,na.rm = TRUE), acousticness=mean(acousticness,na.rm = TRUE), tempo=mean(tempo,,na.rm = TRUE), valence=mean(valence,,na.rm = TRUE))
+
+ggplot(ss,mapping=aes(x=Season, y=danceability, group=1)) + geom_line(color="red") + geom_point(size=0.1) + ylab("Danceability") + ggtitle("Mean Danceability per Season")
+
+ggplot(ss,mapping=aes(x=Season, y=energy, group=1)) + geom_line(color="red") + geom_point(size=0.1) + ylab("Energy") + ggtitle("Mean Energy per Season")
+
+ggplot(ss,mapping=aes(x=Season, y=valence, group=1)) + geom_line(color="red") + geom_point(size=0.1) + ylab("Valence") + ggtitle("Mean Valence per Season")
+```
+These plots shows the central tendency of the data for the three features we are interested in. On these plots it is shown how the value of the three features changes with the season. We will focus on the first two as we can see there is an special relationship as apparently the value increases from winter to summer.
+
+## 7. EXPERIMENT DESIGN AND HYPOTHESIS TESTING 
+
+Now that we have looked at the different attributes and we have completed our analysis and visualization, we are going to do linear regression and hypothesis testing.
+
+From the previous analysis, we believe there is a relationship between certain features and year seasons. To determine if this relation is true, we will test if the null hypothesis of an existing correlation between some features and year season is or not rejected.
+
+
+```{r correlation}
+
+ggplot(ss,mapping=aes(y=danceability, x=energy)) + geom_point(aes(color=Season)) + geom_smooth(method=lm) + ylab("Danceability") + xlab("Energy") + ggtitle("Relationship between Danceability, Energy and Season")
+```
+
+In scatter plot, it is shown that energy and danceability are linearly dependent. Also, it is shown how the danceable songs are not really common in winter but increases as summer arrives.
+
+
+### 7.1. REGRESSION MODELS {.tabset}
+
+First, we will create two different linear regression models. One between danceability and seasons and the other between energy and seasons.
+
+#### Danceability
+```{r Hypothesis. Regression model "Danceability"}
+
+mod<-seasons%>%
+  select(-position,-temp,-snow,-cloud,-humidity)%>%
+  group_by(Season,month=format.Date(date,"%m"))%>%
+  summarise(danceability=mean(danceability, na.rm = TRUE), energy=mean(energy, na.rm = TRUE))
+
+lm_d <-lm(danceability ~ Season, data=mod)
+lm_d %>%
+  tidy() %>%
+  select(term, estimate, std.error)
+
+```
+
+According to the model, danceability increases from fall until summer not constantly.
+
+#### Energy
+```{r Hypothesis. Regression model "Energy"}
+
+lm_e <-lm(energy ~ Season, data=mod)
+lm_e %>%
+  tidy() %>%
+  select(term, estimate, std.error)
+
+```
+According with this other model energy also increases from fall when is the lowest until summer, once again not constantly.
+
+### 7.2. GLOBAL STATISTICS OF THE MODELS {.tabset}
+
+We can also get some global statistics of our models.
+
+#### Danceability
+
+```{r Hypothesis. Global Stats DNC, warning=FALSE}
+
+lm_d %>%
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value)
+```
+
+#### Energy
+```{r Hypothesis. Global Stats ENRGY, warning=FALSE}
+
+lm_e %>%
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value)
+```
+
+### 7.3. RESIDUALS VS FITTED MODEL {.tabset}
+
+To finish, we are going to show the residuals distribution of the models.
+
+#### Danceability
+```{r Hypothesis. Residuals DNC, warning=FALSE}
+aug <- lm_d %>%
+  augment()
+
+ggplot(aug,aes(x=.fitted,y=.resid)) +
+    geom_point() + 
+    geom_smooth() +
+    labs(x="fitted", y="residual", title="Residuals vs Fitted. Danceability Model")
+```
+
+#### Energy
+```{r Hypothesis. Residuals ENGY, warning=FALSE}
+aug <- lm_d %>%
+  augment()
+
+ggplot(aug,aes(x=.fitted,y=.resid)) +
+    geom_point() + 
+    geom_smooth() +
+    labs(x="fitted", y="residual", title="Residuals vs Fitted. Energy Model")
+```
+
+
+As we can see above, the residuals in both models cluster around 0. Therefore, we can say that there is a linear relationship between danceability and energy and year season.
+
+
+## 8. CONCLUSIONS
+
+As we anticipated at the begining of this tutorial, music can help to connect and understand emotions, but it can also trigger new feelings of euphoria and preparation for a specific event. The hypothesis analysis carried out shows how people tend to choose more energetic and danceable music as summer arrives as for most people summer is a synonym of holiday and incite to be in a good mood.
+
+
+## 9. REFERENCES
+
+> https://rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf
+
+> https://bookdown.org/yihui/rmarkdown/html-document.html
+
+> https://www.hcbravo.org/IntroDataSci/bookdown-notes/index.html
+
+> https://www.kaggle.com/lautytonks/top-200-spotify-european-song-and-weather-data
+
+> https://gist.github.com/tadast/8827699
+
+> https://rstudio.github.io/leaflet/
+
+> Code from previous CMSC320 projects
